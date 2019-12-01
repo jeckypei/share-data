@@ -6,6 +6,11 @@
 #include <sys/shm.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include<pthread.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/file.h>
+
 #include "share_data.h"
 
 
@@ -37,6 +42,7 @@ static int share_data_open_shm(char * name, unsigned long size, void **shm_base)
 {
 	int shm_fd;
 	void *ptr;
+	int ret ;
 
 	/* create the shared memory segment */
 	shm_fd = shm_open(name, O_CREAT | O_RDWR, 0666);
@@ -45,7 +51,9 @@ static int share_data_open_shm(char * name, unsigned long size, void **shm_base)
 		return -1;
 	}
 	/* configure the size of the shared memory segment */
-	ftruncate(shm_fd, size);
+	ret = ftruncate(shm_fd, size);
+	if ( ret != 0)
+		return -1;
 
 	/* now map the shared memory segment in the address space of the process */
 	ptr = mmap(0, size , PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
@@ -78,7 +86,7 @@ static int share_data_init()
 {
 	mkdir(SHARE_DATA_DIR, 666);
 	sprintf(shm_mgr_path, "%s/%s", SHARE_DATA_DIR, SHM_MGR_NAME);
-	shm_mgr_fd = share_data_open_shm(shm_mgr_path, sizeof(share_data_mgr_entry_t) * MAX_SHARE_DATA_NUMBER, &g_sd_mgr_tbl);
+	shm_mgr_fd = share_data_open_shm(shm_mgr_path, sizeof(share_data_mgr_entry_t) * MAX_SHARE_DATA_NUMBER, (void **)&g_sd_mgr_tbl);
 	if (shm_mgr_fd < 0){
 		printf("open shm mgr file :%s, fail ", shm_mgr_path);
 		return -1;
@@ -92,12 +100,10 @@ int share_data_register(unsigned int index, unsigned long size, SD_INIT_FUNC_T i
 	if (index < 0 || index >= MAX_SHARE_DATA_NUMBER)
 		return -1;
 	if (!g_sd_mgr_tbl) {
-		share_data_init();
+		if (share_data_init() < 0)
+			return -1;
 	}
-	if (!g_sd_mgr_tbl) {
-		printf ("can not init share memory");
-		return -1;
-	}
+	share_data_entry_t * ptr = &g_sd_tbl[index];
 	
 	ptr->index = index;
 	ptr->size = size;
@@ -106,12 +112,12 @@ int share_data_register(unsigned int index, unsigned long size, SD_INIT_FUNC_T i
 	ptr->read= read;
 
 	mkdir(SHARE_DATA_DIR, 666);
-	share_data_entry_t * ptr = &g_sd_tbl[index];
+
 	sprintf(ptr->path, "%s/share_data.%u", SHARE_DATA_DIR, index );
 	
 	ptr->shm_fd = share_data_open_shm(ptr->path, size, &ptr->addr);
 	if (ptr->shm_fd < 0)
-		printf("open share data %s fail \n");
+		printf("open share data %s fail \n", ptr->path);
 
 	
 	sprintf(ptr->init_lock_path, "%s/share_data.%u.initlock", SHARE_DATA_DIR, index );
@@ -121,8 +127,8 @@ int share_data_register(unsigned int index, unsigned long size, SD_INIT_FUNC_T i
 		return 0;
 	}
 
-	ptr->init_lock_fd = open(ptr->init_lock_path, O_CREAT|O_RDWR);
-	if (ptr->init_lock_fd < 0)
+	int lockfd = open(ptr->init_lock_path, O_CREAT|O_RDWR, 666);
+	if (lockfd< 0)
 		return -1;
 	ret = flock(lockfd, LOCK_EX|LOCK_NB);
 	if ( ret >= 0)  {
@@ -130,14 +136,21 @@ int share_data_register(unsigned int index, unsigned long size, SD_INIT_FUNC_T i
 		pthread_mutexattr_setpshared(&mutexattr, PTHREAD_PROCESS_SHARED);
 		pthread_mutexattr_setrobust(&mutexattr, PTHREAD_MUTEX_ROBUST);
 		pthread_mutex_init(&g_sd_mgr_tbl[index].lock, &mutexattr);
-		g_sd_mgr_tbl[index].head_flag = SHARE_DATA_HEAD_FLAG;
-		g_sd_mgr_tbl[index].tail_flag = SHARE_DATA_TAIL_FLAG;
-		(*ptr->init)(ptr->addr, ptr->size);
+		if (ptr->init)
+			(*ptr->init)(ptr->addr, ptr->size);
 	}
-	flock ( ptr->init_lock_fd , LOCK_UN );
-	close(ptr->init_lock_fd);
+	flock (lockfd , LOCK_UN );
+	close(lockfd);
 	return ptr->shm_fd;
 }
+
+int share_data_unregister(unsigned int index)
+{
+	share_data_entry_t * ptr = &g_sd_tbl[index];
+	share_data_close_shm(ptr->shm_fd, ptr->addr, ptr->size);
+	return 0;
+}
+
 
 int __share_data_set(share_data_entry_t * ptr, void * data)
 {
@@ -185,6 +198,7 @@ void * share_data_get_addr_lock(unsigned int index )
 int share_data_free_addr_unlock(unsigned int index)
 {
 	safe_unlock(&g_sd_mgr_tbl[index].lock);
+	return 0;
 }
 
 int __share_data_load(share_data_entry_t * ptr)
@@ -204,7 +218,7 @@ int share_data_load(unsigned int index)
 	
 	if (safe_lock(&g_sd_mgr_tbl[index].lock) < 0)
 		return -1;
-	ret = __share_data_load(index);
+	ret = __share_data_load(ptr);
 	
 	safe_unlock(&g_sd_mgr_tbl[index].lock);
 	
@@ -224,7 +238,7 @@ int __share_data_save(share_data_entry_t * ptr)
 int _share_data_save(unsigned int index)
 {
 	share_data_entry_t * ptr = &g_sd_tbl[index];
-	return __share_data_save( ptr)l
+	return __share_data_save( ptr);
 
 }
 
@@ -232,7 +246,7 @@ int share_data_save(unsigned int index)
 {
 	share_data_entry_t * ptr = &g_sd_tbl[index];
 	int ret = 0;
-	if (ptr->write) (
+	if (ptr->write) {
 		if (safe_lock(&g_sd_mgr_tbl[index].lock) < 0)
 			return -1;
 		ret = (*ptr->write)(ptr->addr, ptr->size);
@@ -251,7 +265,7 @@ int share_data_set_rt(unsigned int index , void * data, long size)
 	
 	if (safe_lock(&g_sd_mgr_tbl[index].lock) < 0)
 		return -1;
-	__share_data_set(index, data);
+	__share_data_set(ptr, data);
 	ret = __share_data_save(ptr);
 	
 	safe_unlock(&g_sd_mgr_tbl[index].lock);
@@ -265,7 +279,7 @@ int share_data_get_rt(unsigned int index, void **pdata )
 	if (safe_lock(&g_sd_mgr_tbl[index].lock) < 0)
 		return -1;
 	ret = __share_data_load(ptr);
-	__share_data_get(index, pdata);
+	__share_data_get(ptr, pdata);
 	
 	safe_unlock(&g_sd_mgr_tbl[index].lock);
 	

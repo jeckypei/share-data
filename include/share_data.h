@@ -21,7 +21,6 @@ typedef struct share_data_entry{
 	unsigned int index;
 	char path[256];
 	char init_lock_path[256];
-	int init_lock_fd;
 	unsigned long size;	
 	void * addr;
 	int shm_fd;
@@ -31,9 +30,10 @@ typedef struct share_data_entry{
 } share_data_entry_t;
 
 
-int share_data_register(unsigned int index, SD_INIT_FUNC_T init, SD_WRITE_FUNC_T write, SD_READ_FUNC_T  read);
+int share_data_register(unsigned int index, unsigned long size, SD_INIT_FUNC_T init, SD_WRITE_FUNC_T write, SD_READ_FUNC_T  read);
+int share_data_unregister(unsigned int index);
 
-int share_data_set(unsigned int index , void * buf, long size);
+int share_data_set(unsigned int index , void * data);
 int share_data_get(unsigned int index, void **pdata );
 
 void * share_data_get_addr_lock(unsigned int index );
