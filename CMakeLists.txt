@@ -23,5 +23,5 @@ link_directories(
 
 
 add_library (share-data SHARED ${share-data_LIB_SRCS})
-set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/../bin/lib/)
+set(LIBRARY_OUTPUT_PATH ${PROJECT_BINARY_DIR}/lib/)
 
