@@ -210,6 +210,17 @@ int __share_data_load(share_data_entry_t * ptr)
 	return ret;
 }
 
+int _share_data_load(unsigned int index)
+{
+
+	int ret = 0 ;
+	share_data_entry_t * ptr = &g_sd_tbl[index];
+	if(ptr->read)
+		ret = (*ptr->read)(ptr->addr, ptr->size);
+	return ret;
+}
+
+
 int share_data_load(unsigned int index)
 {
 	share_data_entry_t * ptr = &g_sd_tbl[index];
@@ -225,7 +236,7 @@ int share_data_load(unsigned int index)
 	return ret;
 }
 
-int __share_data_save(share_data_entry_t * ptr)
+int __share_data_save(share_data_entry_t * ptr)
 {
 	int ret = 0;
 	if (ptr->write)
@@ -242,7 +253,7 @@ int _share_data_save(unsigned int index)
 
 }
 
-int share_data_save(unsigned int index)
+int share_data_save(unsigned int index)
 {
 	share_data_entry_t * ptr = &g_sd_tbl[index];
 	int ret = 0;

@@ -6,7 +6,8 @@ extern "C"  {
 
 
 
-#define MAX_SHARE_DATA_NUMBER   512
+#include "share_data_index_def.h"
+
 #define SHARE_DATA_DIR "/tmp/sharedata"
 
 typedef int (*SD_INIT_FUNC_T) (void * addr, long size);
@@ -42,7 +43,7 @@ int share_data_free_addr_unlock(unsigned int index);
 int share_data_set_rt(unsigned int index , void * buf, long size);
 int share_data_get_rt(unsigned int index, void **pdata );
 
-
+int _share_data_load(unsigned int index);
 int share_data_load(unsigned int index);
 int _share_data_save(unsigned int index); /*no lock*/
 int share_data_save(unsigned int index);
