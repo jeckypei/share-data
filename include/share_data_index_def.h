@@ -8,7 +8,7 @@ extern "C"  {
 
 enum {
 	
-	SHARE_DATA_INDEX_GPMC = 0,
+	SHARE_DATA_INDEX_BASE = 0,
 	/*add new share data define here*/
 
 	MAX_SHARE_DATA_NUMBER,
